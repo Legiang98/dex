@@ -7,6 +7,28 @@ from repositories.dynamo_repository import insert_order
 from helpers.telegram import send_notification
 from models.order import NewOrder
 
+
+def get_order_statuses(order_response):
+    """Extract Hyperliquid order statuses without hiding an API error response."""
+    if not isinstance(order_response, dict):
+        raise AppError(f"Unexpected Hyperliquid order response: {order_response!r}", HTTP.BAD_REQUEST)
+
+    response = order_response.get("response")
+    if not isinstance(response, dict):
+        detail = response if response is not None else order_response
+        raise AppError(f"Hyperliquid rejected the order: {detail}", HTTP.BAD_REQUEST)
+
+    data = response.get("data")
+    if not isinstance(data, dict):
+        raise AppError(f"Unexpected Hyperliquid order response data: {response!r}", HTTP.BAD_REQUEST)
+
+    statuses = data.get("statuses")
+    if not isinstance(statuses, list) or not statuses:
+        raise AppError(f"Hyperliquid order response has no statuses: {data!r}", HTTP.BAD_REQUEST)
+
+    return statuses
+
+
 def execute_order(signal: WebhookPayload) -> OrderResult:
     try:
         if not signal.quantity:
@@ -49,20 +71,9 @@ def execute_order(signal: WebhookPayload) -> OrderResult:
         # 2. Execute Batch Order (Single Network Call)
         # In python sdk, exchange_client.bulk_orders expects a list of order dicts
         # BUT exchange.bulk_orders signature: bulk_orders(self, orders: list[dict])
-        order_response = exchange_client.bulk_orders(orders)
-        
-        # Parse the response dict
-        try:
-            statuses = order_response.get("response", {}).get("data", {}).get("statuses", [])
-        except AttributeError:
-            # Sdk might return a raw dict
-            if isinstance(order_response, dict) and 'response' in order_response:
-                statuses = order_response['response']['data']['statuses']
-            else:
-                statuses = order_response.get("status", []) # Fallback structure
-
-        if not statuses:
-            raise AppError("Order response missing statuses", HTTP.BAD_REQUEST)
+        grouping = "normalTpsl" if signal.stopLoss else "na"
+        order_response = exchange_client.bulk_orders(orders, grouping=grouping)
+        statuses = get_order_statuses(order_response)
 
         main_order_status = statuses[0]
         order_id = extract_order_id(main_order_status)

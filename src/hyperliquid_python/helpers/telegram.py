@@ -55,3 +55,33 @@ def send_notification(
         send_telegram_message(chat_id, token, message)
     except Exception as e:
         print(f"Failed to send notification: {e}")
+
+
+def send_execution_failure_notification(
+    symbol: str,
+    action: str,
+    order_type: str,
+    price: float,
+    error: str,
+) -> None:
+    """Notify the configured Telegram chat when a queued trade cannot be executed."""
+    is_enabled = os.environ.get('TELEGRAM_ENABLED') == 'true'
+    if not is_enabled:
+        print("Telegram notifications disabled")
+        return
+
+    from helpers.config_helpers import get_secret
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    ssm_path = os.environ.get("SSM_TELEGRAM_TOKEN_PATH", "/hl/telegram_bot_token")
+    token = get_secret('TELEGRAM_BOT_TOKEN', ssm_path)
+
+    if not chat_id or not token:
+        print("Telegram credentials not configured, skipping notification")
+        return
+
+    message = (
+        "❌ Trade Execution Failed"
+        f"\n{action.upper()} {order_type.upper()} {symbol} @ {price}"
+        f"\nError: {error}"
+    )
+    send_telegram_message(chat_id, token, message)

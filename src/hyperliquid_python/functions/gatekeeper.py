@@ -37,6 +37,12 @@ def handler(event, context):
             "body": json.dumps({"message": "Signal received and queued successfully."})
         }
         
+    except json.JSONDecodeError as e:
+        print("Gatekeeper JSON Error:", e)
+        return {
+            "statusCode": HTTP.BAD_REQUEST,
+            "body": json.dumps({"error": "Request body must be valid JSON"})
+        }
     except ValidationError as e:
         print("Gatekeeper Validation Error:", e)
         return {

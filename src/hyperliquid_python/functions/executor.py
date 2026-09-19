@@ -5,6 +5,21 @@ from services.build_order import build_order
 from services.execute_order import execute_order
 from services.close_order import close_order
 from services.log_trade import log_trade
+from helpers.telegram import send_execution_failure_notification
+
+
+def notify_execution_failure(payload, error) -> None:
+    """Failure notifications must not prevent SQS retry/error handling."""
+    try:
+        send_execution_failure_notification(
+            symbol=payload.symbol,
+            action=payload.action,
+            order_type=payload.type,
+            price=payload.price,
+            error=str(error),
+        )
+    except Exception as notification_error:
+        print(f"Failed to send execution-failure notification: {notification_error}")
 
 def handler(event, context):
     try:
@@ -37,6 +52,7 @@ def handler(event, context):
                     print(f"✅ Order Executed: {order_result.orderId}")
                 else:
                     print(f"❌ Execution Failed: {order_result.error}")
+                    notify_execution_failure(trade_order, order_result.error or "Unknown execution error")
                 
             elif action == "EXIT":
                 order_result = close_order(payload)
@@ -44,6 +60,7 @@ def handler(event, context):
                     print(f"✅ Exit Order Executed: {order_result.orderId}")
                 else:
                     print(f"❌ Exit Failed: {order_result.error}")
+                    notify_execution_failure(payload, order_result.error or "Unknown execution error")
                 
             else:
                 print(f"Unknown action in queue: {action}")
